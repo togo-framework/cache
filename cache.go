@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/togo-framework/togo"
-	tcache "github.com/togo-framework/togo/cache"
 )
 
 func init() {
@@ -28,7 +27,7 @@ type memory struct {
 }
 
 // NewMemory returns an in-memory cache.
-func NewMemory() tcache.Cache { return &memory{items: map[string]entry{}} }
+func NewMemory() togo.Cache { return &memory{items: map[string]entry{}} }
 
 func (m *memory) Get(key string) (any, bool) {
 	m.mu.RLock()
