@@ -1,17 +1,53 @@
-// Package cache is togo's default in-memory cache provider. Blank-import (or
-// `togo install togo-framework/cache`) to register it with the kernel.
+// Package cache is togo's cache provider with pluggable drivers: memory (default),
+// file, and database are built in; redis and others register via RegisterDriver.
+// Select with CACHE_DRIVER. Blank-import (or `togo install togo-framework/cache`).
 package cache
 
 import (
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/togo-framework/togo"
 )
 
+// DriverFactory builds a cache from the kernel.
+type DriverFactory func(k *togo.Kernel) (togo.Cache, error)
+
+var (
+	regMu   sync.RWMutex
+	drivers = map[string]DriverFactory{}
+)
+
+// RegisterDriver registers a cache driver by name (call from a plugin init()).
+func RegisterDriver(name string, f DriverFactory) {
+	regMu.Lock()
+	drivers[name] = f
+	regMu.Unlock()
+}
+
 func init() {
+	RegisterDriver("memory", func(*togo.Kernel) (togo.Cache, error) { return NewMemory(), nil })
+	RegisterDriver("file", func(*togo.Kernel) (togo.Cache, error) { return newFileCache(), nil })
+	RegisterDriver("database", func(k *togo.Kernel) (togo.Cache, error) { return newDBCache(k) })
+
 	togo.RegisterProviderFunc("cache", togo.PriorityService, func(k *togo.Kernel) error {
-		k.Cache = NewMemory()
+		name := os.Getenv("CACHE_DRIVER")
+		if name == "" {
+			name = "memory"
+		}
+		regMu.RLock()
+		f, ok := drivers[name]
+		regMu.RUnlock()
+		if !ok {
+			return fmt.Errorf("cache: unknown driver %q (install its plugin?)", name)
+		}
+		c, err := f(k)
+		if err != nil {
+			return err
+		}
+		k.Cache = c
 		return nil
 	})
 }
